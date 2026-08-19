@@ -69,6 +69,16 @@ async def index() -> FileResponse:
     return FileResponse("static/landing.html", media_type="text/html")
 
 
+@app.get("/privacy", include_in_schema=False)
+async def privacy() -> FileResponse:
+    return FileResponse("static/privacy.html", media_type="text/html")
+
+
+@app.get("/terms", include_in_schema=False)
+async def terms() -> FileResponse:
+    return FileResponse("static/terms.html", media_type="text/html")
+
+
 @app.get("/v1/templates")
 async def list_templates() -> dict:
     return {"templates": TEMPLATES}
