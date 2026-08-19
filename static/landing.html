@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OG Forge — Open Graph Image API</title>
+<meta name="description" content="Generate beautiful social cards via a single GET request. 5 templates, custom colors, no external dependencies.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚒️</text></svg>">
+<style>
+:root{--bg:#0d0d12;--panel:#16161d;--border:#26262f;--fg:#f0f0f5;--muted:#9494a3;--accent:#6366f1;--accent2:#8b5cf6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+header{padding:28px 0;display:flex;justify-content:space-between;align-items:center}
+.logo{font-size:20px;font-weight:700;display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg)}
+.logo span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+nav a{color:var(--muted);text-decoration:none;margin-left:24px;font-size:14px}
+nav a:hover{color:var(--fg)}
+.hero{text-align:center;padding:72px 0 48px}
+.hero h1{font-size:clamp(34px,6vw,60px);font-weight:800;letter-spacing:-0.02em;line-height:1.1;margin-bottom:20px}
+.hero h1 em{font-style:normal;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{color:var(--muted);font-size:19px;max-width:620px;margin:0 auto 32px}
+.btn{display:inline-block;padding:14px 32px;border-radius:12px;font-weight:600;text-decoration:none;font-size:16px;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 8px 24px rgba(99,102,241,.35)}
+.btn-ghost{border:1px solid var(--border);color:var(--fg);margin-left:12px}
+.section{padding:48px 0}
+h2{font-size:28px;font-weight:700;margin-bottom:8px;text-align:center}
+.sub{color:var(--muted);text-align:center;margin-bottom:36px}
+.demo{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:28px}
+.demo-grid{display:grid;grid-template-columns:340px 1fr;gap:28px}
+@media(max-width:800px){.demo-grid{grid-template-columns:1fr}}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.field input,.field select{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:14px}
+.field input:focus,.field select:focus{outline:2px solid var(--accent);border-color:transparent}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.preview img{width:100%;border-radius:12px;border:1px solid var(--border);display:block}
+.url-box{margin-top:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:ui-monospace,monospace;font-size:12px;color:var(--muted);word-break:break-all;position:relative}
+.url-box button{position:absolute;top:8px;right:8px;background:var(--panel);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
+.feature{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px}
+.feature h3{font-size:16px;margin-bottom:8px}
+.feature p{color:var(--muted);font-size:14px}
+.code{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;font-family:ui-monospace,monospace;font-size:13px;overflow-x:auto;color:#d4d4dc}
+.code .cm{color:#6a9955}.code .st{color:#ce9178}.code .kw{color:#569cd6}
+footer{border-top:1px solid var(--border);padding:32px 0;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.badge{display:inline-block;background:rgba(99,102,241,.15);color:var(--accent);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:600;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <a class="logo" href="/">⚒️ OG<span>Forge</span></a>
+  <nav>
+    <a href="#demo">Demo</a>
+    <a href="#docs">Docs</a>
+    <a href="#pricing">Pricing</a>
+    <a href="/docs" target="_blank">API</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="badge">One GET request · Zero dependencies</div>
+  <h1>Social cards,<br><em>generated on the fly</em></h1>
+  <p>Drop a URL in your <code>&lt;meta&gt;</code> tag and get a beautiful Open Graph image. Five templates, full color control, sub-100ms rendering.</p>
+  <a class="btn btn-primary" href="#demo">Try it live</a>
+  <a class="btn btn-ghost" href="#docs">Read the docs</a>
+</section>
+
+<section class="section" id="demo">
+  <h2>Live playground</h2>
+  <p class="sub">Everything renders right here — this page calls the API itself.</p>
+  <div class="demo">
+    <div class="demo-grid">
+      <div>
+        <div class="field">
+          <label>Title</label>
+          <input id="f-title" value="Ship your side project">
+        </div>
+        <div class="field">
+          <label>Subtitle</label>
+          <input id="f-subtitle" value="A developer's guide to launching in weekends">
+        </div>
+        <div class="field">
+          <label>Brand</label>
+          <input id="f-brand" value="DEVLOG">
+        </div>
+        <div class="field">
+          <label>Template</label>
+          <select id="f-template">
+            <option value="gradient">Gradient</option>
+            <option value="split">Split</option>
+            <option value="spotlight">Spotlight</option>
+            <option value="banner">Banner</option>
+            <option value="minimal">Minimal</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="field"><label>Background</label><input id="f-bg" value=""></div>
+          <div class="field"><label>Background 2</label><input id="f-bg2" value=""></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Accent</label><input id="f-accent" value=""></div>
+          <div class="field"><label>Text</label><input id="f-text" value=""></div>
+        </div>
+      </div>
+      <div class="preview">
+        <img id="preview" alt="Generated OG image preview">
+        <div class="url-box"><span id="url-text"></span><button onclick="copyUrl()">Copy</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="docs">
+  <h2>Dead simple API</h2>
+  <p class="sub">One endpoint. Query params in, PNG out.</p>
+  <div class="code">
+<span class="cm">&lt;!-- Drop this in your &lt;head&gt; --&gt;</span>
+&lt;meta property="og:image"
+  content="<span class="st">https://your-deployment.com/v1/generate?title=My%20Page&amp;template=gradient</span>"&gt;
+
+<span class="cm"># Or from anywhere</span>
+curl "<span class="st">https://your-deployment.com/v1/generate</span>" \
+  --get --data-urlencode "<span class="kw">title</span>=Hello world" \
+  --data-urlencode "<span class="kw">template</span>=split" \
+  --data-urlencode "<span class="kw">accent_color</span>=#6366f1" \
+  -o card.png
+  </div>
+</section>
+
+<section class="section">
+  <h2>Why OG Forge</h2>
+  <div class="features">
+    <div class="feature"><h3>⚡ Sub-100ms renders</h3><p>Pure Pillow rendering pipeline. No headless browsers, no external AI APIs, no cold-start containers.</p></div>
+    <div class="feature"><h3>🎨 5 battle-tested templates</h3><p>Gradient, Split, Spotlight, Banner, Minimal. Auto-fitting typography means no broken layouts.</p></div>
+    <div class="feature"><h3>🔧 Self-host in minutes</h3><p>Single Docker image, ~60MB. Runs on any free tier — Fly.io, Railway, Render, your own VPS.</p></div>
+    <div class="feature"><h3>🔑 Freemium built in</h3><p>Per-IP rate limiting out of the box; API-key tiers ready for Stripe/Lemon Squeezy provisioning.</p></div>
+    <div class="feature"><h3>📐 Any size</h3><p>1200×630 default, but any dimensions from 200px to 2400px. Twitter, LinkedIn, custom — covered.</p></div>
+    <div class="feature"><h3>🛡 No tracking</h3><p>No cookies, no analytics beacons, no PII stored. Requests render and vanish.</p></div>
+  </div>
+</section>
+
+<section class="section" id="pricing">
+  <h2>Pricing</h2>
+  <p class="sub">Host it yourself and it's free forever. Or use a hosted deployment.</p>
+  <div class="features">
+    <div class="feature"><h3>Free — $0</h3><p>Self-hosted. Unlimited. The MIT license lets you run it commercially.</p></div>
+    <div class="feature"><h3>Hosted Free — $0</h3><p>10 images/minute per IP. Perfect for blogs and side projects.</p></div>
+    <div class="feature"><h3>Hosted Pro — $9/mo</h3><p>Unlimited renders, priority queue, custom fonts, template API. Key issued instantly.</p></div>
+  </div>
+</section>
+
+<footer>
+  <div>⚒️ OG Forge — built by an AI agent, operated by humans.</div>
+  <div>MIT License · <a href="/docs" style="color:var(--muted)">API Docs</a></div>
+</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const base = location.origin + '/v1/generate';
+let debounce;
+
+function buildUrl(){
+  const p = new URLSearchParams();
+  p.set('title', $('f-title').value || ' ');
+  if($('f-subtitle').value) p.set('subtitle', $('f-subtitle').value);
+  if($('f-brand').value) p.set('brand', $('f-brand').value);
+  p.set('template', $('f-template').value);
+  for(const [id,k] of [['f-bg','bg_color'],['f-bg2','bg_color2'],['f-accent','accent_color'],['f-text','text_color']]){
+    if($(id).value.trim()) p.set(k, $(id).value.trim());
+  }
+  return base + '?' + p.toString();
+}
+
+function update(){
+  clearTimeout(debounce);
+  debounce = setTimeout(()=>{
+    const url = buildUrl();
+    $('url-text').textContent = url;
+    $('preview').src = url;
+  }, 300);
+}
+
+function copyUrl(){
+  navigator.clipboard.writeText($('url-text').textContent);
+  event.target.textContent = 'Copied!';
+  setTimeout(()=>event.target.textContent='Copy', 1200);
+}
+
+document.querySelectorAll('input,select').forEach(el=>el.addEventListener('input',update));
+update();
+</script>
+</body>
+</html>
