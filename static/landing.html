@@ -148,7 +148,17 @@ curl "<span class="st">https://your-deployment.com/v1/generate</span>" \
   <div class="features">
     <div class="feature"><h3>Free — $0</h3><p>Self-hosted. Unlimited. The MIT license lets you run it commercially.</p></div>
     <div class="feature"><h3>Hosted Free — $0</h3><p>10 images/minute per IP. Perfect for blogs and side projects.</p></div>
-    <div class="feature"><h3>Hosted Pro — $9/mo</h3><p>Unlimited renders, priority queue, custom fonts, template API. Key issued instantly.</p></div>
+    <div class="feature">
+      <h3>Hosted Pro — $9/mo</h3>
+      <p>Unlimited renders, priority queue, custom fonts, template API.</p>
+      <p style="font-size:0.85em;color:var(--muted)">Payments are being set up. Leave your email and be first in line:</p>
+      <form id="wl-form" style="display:flex;gap:8px;margin-top:10px" onsubmit="return joinWaitlist(event)">
+        <input id="wl-email" type="email" required placeholder="you@example.com"
+               style="flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid #444;background:#1a1a24;color:var(--fg)">
+        <button type="submit" style="padding:8px 14px;border-radius:8px;border:0;background:linear-gradient(90deg,#6366f1,#a855f7);color:#fff;font-weight:600;cursor:pointer">Join</button>
+      </form>
+      <p id="wl-status" style="font-size:0.85em;margin-top:8px;min-height:1em"></p>
+    </div>
   </div>
 </section>
 
@@ -193,6 +203,33 @@ function copyUrl(){
 
 document.querySelectorAll('input,select').forEach(el=>el.addEventListener('input',update));
 update();
+
+async function joinWaitlist(ev){
+  ev.preventDefault();
+  const email = $('wl-email').value.trim();
+  const status = $('wl-status');
+  const btn = ev.target.querySelector('button[type=submit]');
+  if(!email){ status.textContent = 'Please enter an email.'; return false; }
+  btn.disabled = true; status.textContent = 'Joining…';
+  try{
+    const r = await fetch('/v1/waitlist', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(r.ok && d.ok){
+      status.textContent = "You're #" + d.position + " on the list. We'll email you at launch.";
+      $('wl-email').value = '';
+    } else {
+      status.textContent = d.detail || 'Something went wrong. Try again.';
+    }
+  }catch(e){
+    status.textContent = 'Network error. Try again.';
+  }
+  btn.disabled = false;
+  return false;
+}
 </script>
 </body>
 </html>

@@ -7,6 +7,9 @@ Pro tier: API key removes limits (key validation hook included).
 from __future__ import annotations
 
 import hashlib
+import os
+import re
+import sqlite3
 import time
 from collections import defaultdict, deque
 
@@ -141,3 +144,71 @@ async def generate_get(
 @app.get("/v1/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Waitlist — capture demand while payments are being set up
+# (SQLite on Render free tier is ephemeral; export periodically via the
+# admin endpoint and mirror signups to service logs as a backup.)
+# ---------------------------------------------------------------------------
+
+WAITLIST_DB = os.environ.get("OGF_WAITLIST_DB", "data/waitlist.db")
+WAITLIST_ADMIN_KEY = os.environ.get("OGF_ADMIN_KEY", "")  # unset = export disabled
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _waitlist_db() -> sqlite3.Connection:
+    d = os.path.dirname(WAITLIST_DB)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    conn = sqlite3.connect(WAITLIST_DB)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS waitlist ("
+        "id INTEGER PRIMARY KEY, "
+        "email TEXT UNIQUE NOT NULL, "
+        "created_at TEXT DEFAULT (datetime('now')))"
+    )
+    return conn
+
+
+@app.post("/v1/waitlist")
+async def join_waitlist(request: Request, payload: dict) -> dict:
+    email = str(payload.get("email", "")).strip().lower()
+    if not _EMAIL_RE.match(email) or len(email) > 254:
+        raise HTTPException(400, "A valid email address is required.")
+
+    # 5 sign-up attempts / minute / IP keeps bots out.
+    allowed, retry = check_rate_limit("wl:" + anon_key(client_ip(request)), limit=5)
+    if not allowed:
+        raise HTTPException(
+            429,
+            f"Too many requests. Retry in {retry}s.",
+            headers={"Retry-After": str(retry)},
+        )
+
+    conn = _waitlist_db()
+    try:
+        conn.execute("INSERT OR IGNORE INTO waitlist(email) VALUES (?)", (email,))
+        conn.commit()
+        (count,) = conn.execute("SELECT COUNT(*) FROM waitlist").fetchone()
+    finally:
+        conn.close()
+    print(f"[waitlist] signup total={count}", flush=True)  # log backup (ephemeral disk)
+    return {"ok": True, "position": count}
+
+
+@app.get("/v1/waitlist/export")
+async def export_waitlist(key: str = Query("")) -> Response:
+    if not WAITLIST_ADMIN_KEY or key != WAITLIST_ADMIN_KEY:
+        raise HTTPException(404)
+    conn = _waitlist_db()
+    try:
+        rows = conn.execute("SELECT email, created_at FROM waitlist ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    body = "\n".join(f"{email},{created}" for email, created in rows)
+    return Response(
+        content=body or "email,created_at",
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=waitlist.csv"},
+    )
