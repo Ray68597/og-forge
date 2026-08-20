@@ -361,3 +361,91 @@ async def creem_webhook(request: Request) -> dict:
 async def config() -> dict:
     """Landing page reads this to decide: show waitlist form or buy button."""
     return {"checkout_url": CHECKOUT_URL if CHECKOUT_URL else None}
+
+
+# ---------------------------------------------------------------------------
+# Self-backup — periodically commit an encrypted waitlist snapshot to the
+# public repo's `backups` branch (ciphertext only; key lives in Render env).
+# Rationale: Render free-tier disk is wiped on every redeploy, so SQLite is
+# ephemeral. This loop + service-log mirror are the two recovery paths.
+# Note: the loop only runs while the service is awake; on wake (first
+# request) the first iteration fires immediately.
+# ---------------------------------------------------------------------------
+
+import asyncio
+import base64
+import urllib.error
+import urllib.request
+
+from cryptography.fernet import Fernet
+
+GITHUB_TOKEN = os.environ.get("OGF_GH_TOKEN", "")
+BACKUP_REPO = os.environ.get("OGF_BACKUP_REPO", "")     # "owner/repo"
+BACKUP_KEY = os.environ.get("OGF_BACKUP_KEY", "")       # Fernet key
+BACKUP_BRANCH = "backups"
+BACKUP_INTERVAL = 1800  # 30 minutes
+
+
+def _waitlist_csv() -> str:
+    conn = _waitlist_db()
+    try:
+        rows = conn.execute("SELECT email, created_at FROM waitlist ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    return "\n".join(f"{email},{created}" for email, created in rows)
+
+
+def _push_backup() -> None:
+    """Fernet-encrypt the waitlist and commit it to the backups branch.
+    All failures are logged and never propagate — backup must not take
+    the API down."""
+    if not (GITHUB_TOKEN and BACKUP_REPO and BACKUP_KEY):
+        print("[backup] not configured (env missing), skip", flush=True)
+        return
+    csv = _waitlist_csv()
+    count = csv.count("\n") + 1 if csv else 0
+    if not csv:
+        print("[backup] waitlist empty, skip", flush=True)
+        return
+    blob = Fernet(BACKUP_KEY.encode()).encrypt(csv.encode())
+    ts = time.strftime("%Y%m%d-%H%M", time.gmtime())
+    path = f"backups/waitlist-{ts}.csv.enc"
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{BACKUP_REPO}/contents/{path}",
+        method="PUT",
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+        },
+        data=json.dumps({
+            "message": f"backup: {count} emails",
+            "content": base64.b64encode(blob).decode(),
+            "branch": BACKUP_BRANCH,
+        }).encode(),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            print(f"[backup] pushed {path} ({count} emails, HTTP {r.status})", flush=True)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 422:  # same-path PUT without sha = file exists this cycle
+            print(f"[backup] {path} already exists, skip", flush=True)
+        else:
+            print(f"[backup] FAILED HTTP {exc.code}: {exc.read()[:200]}", flush=True)
+    except Exception as exc:
+        print(f"[backup] FAILED: {exc}", flush=True)
+
+
+async def _backup_loop() -> None:
+    # first iteration runs immediately on startup / wake
+    while True:
+        try:
+            await asyncio.to_thread(_push_backup)
+        except Exception as exc:  # pragma: no cover — loop must never die
+            print(f"[backup] loop error: {exc}", flush=True)
+        await asyncio.sleep(BACKUP_INTERVAL)
+
+
+@app.on_event("startup")
+async def _start_backup_loop() -> None:
+    asyncio.create_task(_backup_loop())
