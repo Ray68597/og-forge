@@ -1,0 +1,37 @@
+{
+  "name": "og-forge",
+  "version": "1.0.0",
+  "description": "Generate Open Graph social card images with a single URL. Client SDK for the OG Forge API.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "keywords": [
+    "og-image",
+    "open-graph",
+    "social-cards",
+    "meta-tags",
+    "og",
+    "image-generation",
+    "twitter-card",
+    "seo"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ray68597/og-forge.git"
+  },
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs"
+  }
+}
