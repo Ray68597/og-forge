@@ -1,0 +1,49 @@
+name: uptime
+on:
+  schedule:
+    - cron: '0 * * * *'  # 每小时整点（UTC）
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 健康检查（等待 60s 覆盖免费层冷启动唤醒）
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 https://og-forge.xyz/v1/health || echo 000)
+          echo "health_status=$CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::og-forge.xyz 健康检查失败 (HTTP $CODE)"
+            exit 1
+          fi
+
+      - name: 失败时开 Issue（GitHub 会邮件通知仓库所有者）
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🚨 Uptime check FAILED — og-forge.xyz';
+            const existing = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', labels: 'uptime'
+            });
+            if (existing.data.length === 0) {
+              await github.rest.issues.create({
+                ...context.repo,
+                title,
+                body: [
+                  '健康检查失败时间(UTC): ' + new Date().toISOString(),
+                  '',
+                  '**排查步骤**:',
+                  '1. 访问 https://og-forge.xyz/v1/health 手动确认',
+                  '2. Render 控制台查看服务日志: https://dashboard.render.com',
+                  '3. 恢复后关闭本 Issue，下小时巡检自动继续',
+                  '',
+                  '_(本 Issue 由 uptime workflow 自动创建，已存在未关闭的同类 Issue 时不重复开)_'
+                ].join('\n'),
+                labels: ['uptime', 'automated']
+              });
+            }
