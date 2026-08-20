@@ -376,6 +376,9 @@ RENDER_SERVICE_ID = os.environ.get("OGF_RENDER_SERVICE", "")
 
 
 def _trigger_render_deploy() -> str:
+    """POST Render's deploy API. Returns the deploy id, or '?' when Render
+    answers 2xx with no parsable body — observed on back-to-back pushes
+    while a deploy is already building."""
     req = urllib.request.Request(
         f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/deploys",
         method="POST",
@@ -386,7 +389,30 @@ def _trigger_render_deploy() -> str:
         data=b"{}",
     )
     with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read()).get("id", "?")
+        body = r.read().strip()
+    if not body:
+        print("[autodeploy] 2xx empty body (likely queued)", flush=True)
+        return "?"
+    try:
+        return json.loads(body).get("id", "?")
+    except json.JSONDecodeError:
+        print("[autodeploy] 2xx non-JSON body, assuming queued", flush=True)
+        return "?"
+
+
+async def _retry_deploy(pusher: str) -> None:
+    """Background retry for transient trigger failures. Render always builds
+    the latest master, so a delayed retry still ships every commit even if
+    it fires long after the push that started it."""
+    for delay in (90, 300):
+        await asyncio.sleep(delay)
+        try:
+            deploy_id = await asyncio.to_thread(_trigger_render_deploy)
+            print(f"[autodeploy] retry OK: deploy {deploy_id} (push by {pusher})", flush=True)
+            return
+        except Exception as exc:
+            print(f"[autodeploy] retry failed: {exc}", flush=True)
+    print("[autodeploy] retries exhausted; manual deploy may be needed", flush=True)
 
 
 @app.post("/v1/webhook/github")
@@ -418,15 +444,17 @@ async def github_webhook(request: Request) -> dict:
         print("[autodeploy] render env missing, cannot trigger", flush=True)
         return {"received": True, "deployed": False}
 
+    pusher = payload.get("pusher", {}).get("name", "?")
     try:
         deploy_id = await asyncio.to_thread(_trigger_render_deploy)
-        pusher = payload.get("pusher", {}).get("name", "?")
         print(f"[autodeploy] deploy {deploy_id} triggered by push from {pusher}", flush=True)
         return {"received": True, "deployed": True, "deploy_id": deploy_id}
     except Exception as exc:
-        # 200 so GitHub doesn't disable the hook; fallback discipline applies
-        print(f"[autodeploy] FAILED: {exc}", flush=True)
-        return {"received": True, "deployed": False, "error": str(exc)}
+        # 200 so GitHub doesn't disable the hook; background retry covers
+        # transient failures (Render builds latest master on any trigger).
+        print(f"[autodeploy] FAILED: {exc}; scheduling background retry", flush=True)
+        asyncio.create_task(_retry_deploy(pusher))
+        return {"received": True, "deployed": False, "retry_scheduled": True, "error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
