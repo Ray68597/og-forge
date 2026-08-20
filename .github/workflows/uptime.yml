@@ -21,7 +21,7 @@ jobs:
             exit 1
           fi
 
-      - name: 失败时开 Issue（GitHub 会邮件通知仓库所有者）
+      - name: 失败时开 Issue（@mention 保证邮件必达）
         if: failure()
         uses: actions/github-script@v7
         with:
@@ -35,7 +35,7 @@ jobs:
                 ...context.repo,
                 title,
                 body: [
-                  '健康检查失败时间(UTC): ' + new Date().toISOString(),
+                  '@Ray68597 健康检查失败时间(UTC): ' + new Date().toISOString(),
                   '',
                   '**排查步骤**:',
                   '1. 访问 https://og-forge.xyz/v1/health 手动确认',
