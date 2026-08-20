@@ -364,6 +364,72 @@ async def config() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# GitHub webhook — self-triggered autodeploy. A push to master makes GitHub
+# call this endpoint; we then ask Render's API to deploy. This closes the
+# loop without the Render GitHub App (which requires dashboard access we
+# don't have). Fallback remains: explicit POST /v1/services/{id}/deploys.
+# ---------------------------------------------------------------------------
+
+GH_WEBHOOK_SECRET = os.environ.get("OGF_GH_WEBHOOK_SECRET", "")
+RENDER_API_KEY = os.environ.get("OGF_RENDER_KEY", "")
+RENDER_SERVICE_ID = os.environ.get("OGF_RENDER_SERVICE", "")
+
+
+def _trigger_render_deploy() -> str:
+    req = urllib.request.Request(
+        f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/deploys",
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {RENDER_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        data=b"{}",
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read()).get("id", "?")
+
+
+@app.post("/v1/webhook/github")
+async def github_webhook(request: Request) -> dict:
+    raw = await request.body()
+
+    if not GH_WEBHOOK_SECRET:
+        raise HTTPException(503, "Webhook not configured.")
+
+    signature = request.headers.get("x-hub-signature-256", "")
+    expected = "sha256=" + hmac.new(GH_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        print(f"[gh-webhook] invalid signature (len={len(signature)})", flush=True)
+        raise HTTPException(401, "Invalid signature.")
+
+    event = request.headers.get("x-github-event", "")
+    if event != "push":
+        return {"received": True, "ignored": event}
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"received": True, "ignored": "bad-json"}
+
+    if payload.get("ref") != "refs/heads/master":
+        return {"received": True, "ignored": payload.get("ref", "?")}
+
+    if not (RENDER_API_KEY and RENDER_SERVICE_ID):
+        print("[autodeploy] render env missing, cannot trigger", flush=True)
+        return {"received": True, "deployed": False}
+
+    try:
+        deploy_id = await asyncio.to_thread(_trigger_render_deploy)
+        pusher = payload.get("pusher", {}).get("name", "?")
+        print(f"[autodeploy] deploy {deploy_id} triggered by push from {pusher}", flush=True)
+        return {"received": True, "deployed": True, "deploy_id": deploy_id}
+    except Exception as exc:
+        # 200 so GitHub doesn't disable the hook; fallback discipline applies
+        print(f"[autodeploy] FAILED: {exc}", flush=True)
+        return {"received": True, "deployed": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
 # Self-backup — periodically commit an encrypted waitlist snapshot to the
 # public repo's `backups` branch (ciphertext only; key lives in Render env).
 # Rationale: Render free-tier disk is wiped on every redeploy, so SQLite is
