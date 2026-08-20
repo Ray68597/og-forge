@@ -502,6 +502,70 @@ def _push_backup() -> None:
         print(f"[backup] FAILED: {exc}", flush=True)
 
 
+def _fetch_latest_backup() -> str | None:
+    """Return the decrypted plaintext CSV of the newest backup, or None."""
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{BACKUP_REPO}/contents/backups?ref={BACKUP_BRANCH}",
+            headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            files = json.loads(r.read())
+        names = sorted(f["name"] for f in files if f["name"].endswith(".enc"))
+        if not names:
+            return None
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{BACKUP_REPO}/contents/backups/{names[-1]}?ref={BACKUP_BRANCH}",
+            headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            blob = json.loads(r.read())
+        return Fernet(BACKUP_KEY.encode()).decrypt(base64.b64decode(blob["content"])).decode()
+    except Exception as exc:
+        print(f"[restore] fetch FAILED: {exc}", flush=True)
+        return None
+
+
+def _restore_waitlist_if_empty() -> None:
+    """Rebuild the waitlist from the newest encrypted backup on startup.
+
+    Render's ephemeral disk is wiped by every redeploy; without this the
+    backup only existed for manual recovery. Runs before the backup loop
+    so a restore is itself re-backed-up on the first cycle."""
+    if not (GITHUB_TOKEN and BACKUP_REPO and BACKUP_KEY):
+        print("[restore] not configured (env missing), skip", flush=True)
+        return
+    conn = _waitlist_db()
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM waitlist").fetchone()[0]
+        if count:
+            print(f"[restore] waitlist has {count} row(s), skip", flush=True)
+            return
+        csv = _fetch_latest_backup()
+        if not csv:
+            print("[restore] no backup available, starting empty", flush=True)
+            return
+        rows = 0
+        for line in csv.splitlines():
+            email, _, created = line.partition(",")
+            if _EMAIL_RE.match(email):
+                conn.execute(
+                    "INSERT OR IGNORE INTO waitlist (email, created_at) VALUES (?, ?)",
+                    (email, created or None),
+                )
+                rows += 1
+        conn.commit()
+        print(f"[restore] restored {rows} row(s) from backup", flush=True)
+    finally:
+        conn.close()
+
+
 async def _backup_loop() -> None:
     # first iteration runs immediately on startup / wake
     while True:
@@ -514,4 +578,5 @@ async def _backup_loop() -> None:
 
 @app.on_event("startup")
 async def _start_backup_loop() -> None:
+    await asyncio.to_thread(_restore_waitlist_if_empty)
     asyncio.create_task(_backup_loop())
