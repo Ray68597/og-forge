@@ -42,7 +42,11 @@ _hits: dict[str, deque[float]] = defaultdict(deque)
 API_KEYS: dict[str, str] = {}  # {"ogf_live_xxx": "pro", ...}
 
 CREEM_WEBHOOK_SECRET = os.environ.get("CREEM_WEBHOOK_SECRET", "")
-CHECKOUT_URL = os.environ.get("OGF_CHECKOUT_URL", "")
+# Permanent Creem checkout link (the product page auto-creates a fresh
+# checkout session per buyer). Override or disable via the OGF_CHECKOUT_URL
+# env var: set a different URL, or an empty string to show the waitlist again.
+DEFAULT_CHECKOUT_URL = "https://creem.io/product/prod_7PgaeSfn1hJUPmpBbw4B3f"
+CHECKOUT_URL = os.environ.get("OGF_CHECKOUT_URL", DEFAULT_CHECKOUT_URL)
 
 # SQLite path (shared by waitlist + api_keys; ephemeral on Render free tier,
 # so every write is mirrored to service logs as a backup).

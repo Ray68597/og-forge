@@ -4,11 +4,14 @@ import sys, os, json, hmac, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + "/..")
 os.environ["CREEM_WEBHOOK_SECRET"] = "whsec_test_123"
 os.environ["OGF_WAITLIST_DB"] = "/tmp/ogf_test.db"
+# Explicitly disable checkout so test 2 covers the "payments off" path;
+# the code default (live Creem product link) is asserted in test 11.
+os.environ["OGF_CHECKOUT_URL"] = ""
 if os.path.exists("/tmp/ogf_test.db"):
     os.remove("/tmp/ogf_test.db")
 
 from fastapi.testclient import TestClient
-from app.main import app, API_KEYS, _load_api_keys, _provision_key
+from app.main import app, API_KEYS, DEFAULT_CHECKOUT_URL, _load_api_keys, _provision_key
 
 c = TestClient(app)
 SECRET = b"whsec_test_123"
@@ -92,5 +95,9 @@ r = c.post("/v1/webhook/creem", **signed({"eventType": "refund.created", "object
 assert r.status_code == 200
 print("PASS: ignored gracefully")
 
+print("=== 11. default checkout URL is the live Creem product link ===")
+assert DEFAULT_CHECKOUT_URL.startswith("https://creem.io/product/prod_"), DEFAULT_CHECKOUT_URL
+print("PASS:", DEFAULT_CHECKOUT_URL)
+
 print()
-print("ALL 10 TESTS PASSED")
+print("ALL 11 TESTS PASSED")
