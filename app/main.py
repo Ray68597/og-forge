@@ -216,6 +216,38 @@ def _waitlist_db() -> sqlite3.Connection:
     return conn
 
 
+def _get_backup_state(key: str) -> str | None:
+    """Read a backup bookkeeping value. Survives sleep/wake (disk persists
+    within a deploy); wiped on redeploy together with the waitlist."""
+    try:
+        conn = _waitlist_db()
+        try:
+            row = conn.execute(
+                "SELECT value FROM backup_state WHERE key = ?", (key,)
+            ).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+
+
+def _set_backup_state(key: str, value: str) -> None:
+    conn = _waitlist_db()
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS backup_state ("
+            "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO backup_state (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @app.post("/v1/waitlist")
 async def join_waitlist(request: Request, payload: dict) -> dict:
     email = str(payload.get("email", "")).strip().lower()
@@ -491,6 +523,8 @@ def _waitlist_csv() -> str:
 
 def _push_backup() -> None:
     """Fernet-encrypt the waitlist and commit it to the backups branch.
+    Content-hash dedup: nothing is pushed when the CSV is unchanged since
+    the last push — wakes (e.g. hourly uptime checks) stay silent.
     All failures are logged and never propagate — backup must not take
     the API down."""
     if not (GITHUB_TOKEN and BACKUP_REPO and BACKUP_KEY):
@@ -500,6 +534,10 @@ def _push_backup() -> None:
     count = csv.count("\n") + 1 if csv else 0
     if not csv:
         print("[backup] waitlist empty, skip", flush=True)
+        return
+    csv_hash = hashlib.sha256(csv.encode()).hexdigest()
+    if _get_backup_state("last_csv_sha256") == csv_hash:
+        print("[backup] unchanged since last push, skip", flush=True)
         return
     blob = Fernet(BACKUP_KEY.encode()).encrypt(csv.encode())
     ts = time.strftime("%Y%m%d-%H%M", time.gmtime())
@@ -521,6 +559,7 @@ def _push_backup() -> None:
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             print(f"[backup] pushed {path} ({count} emails, HTTP {r.status})", flush=True)
+            _set_backup_state("last_csv_sha256", csv_hash)
     except urllib.error.HTTPError as exc:
         if exc.code == 422:  # same-path PUT without sha = file exists this cycle
             print(f"[backup] {path} already exists, skip", flush=True)
@@ -589,6 +628,9 @@ def _restore_waitlist_if_empty() -> None:
                 )
                 rows += 1
         conn.commit()
+        # Remember what the restored snapshot is, so the first backup cycle
+        # after this redeploy doesn't push a byte-identical duplicate.
+        _set_backup_state("last_csv_sha256", hashlib.sha256(csv.encode()).hexdigest())
         print(f"[restore] restored {rows} row(s) from backup", flush=True)
     finally:
         conn.close()
