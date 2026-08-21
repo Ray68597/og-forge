@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome to Pro — OG Forge</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚒️</text></svg>">
+<style>
+:root{--bg:#0d0d12;--panel:#16161d;--border:#26262f;--fg:#f0f0f5;--muted:#9494a3;--accent:#6366f1;--accent2:#8b5cf6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;min-height:100vh;display:flex;flex-direction:column}
+.wrap{max-width:720px;margin:0 auto;padding:0 24px;width:100%}
+header{padding:28px 0}
+.logo{font-size:20px;font-weight:700;display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg)}
+.logo span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+main{flex:1;padding:32px 0 64px}
+.badge{display:inline-block;background:rgba(99,102,241,.15);color:var(--accent);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:600;margin-bottom:16px}
+h1{font-size:clamp(28px,5vw,42px);font-weight:800;letter-spacing:-0.02em;line-height:1.15;margin-bottom:12px}
+h1 em{font-style:normal;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+p.lead{color:var(--muted);font-size:17px;margin-bottom:28px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:20px}
+.card h2{font-size:15px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:14px}
+.keybox{display:flex;gap:10px;align-items:stretch}
+.keybox code{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-family:ui-monospace,monospace;font-size:13px;word-break:break-all;color:#d4d4dc}
+button{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:8px;padding:12px 20px;font-weight:600;font-size:14px;cursor:pointer;white-space:nowrap}
+button:hover{opacity:.92}
+.hint{color:var(--muted);font-size:13px;margin-top:12px}
+pre{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;font-family:ui-monospace,monospace;font-size:13px;overflow-x:auto;color:#d4d4dc;margin-top:8px}
+.status{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:15px}
+.spinner{width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+footer{border-top:1px solid var(--border);padding:24px 0;color:var(--muted);font-size:13px}
+footer a{color:var(--muted)}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><a class="logo" href="/">⚒️ OG<span>Forge</span></a></header>
+<main>
+  <div class="badge">Pro subscription active</div>
+  <h1>Payment received.<br><em>Your API key is ready.</em></h1>
+  <p class="lead">Unlimited renders, no rate limits. Your key works instantly.</p>
+
+  <!-- provisioning state -->
+  <div id="loading" class="card">
+    <div class="status"><div class="spinner"></div><span>Provisioning your API key… this usually takes a few seconds.</span></div>
+  </div>
+
+  <!-- success state -->
+  <div id="done" class="hidden">
+    <div class="card">
+      <h2>Your API key</h2>
+      <div class="keybox">
+        <code id="apikey"></code>
+        <button id="copy">Copy</button>
+      </div>
+      <p class="hint">Sent to <strong id="email"></strong>. Keep this key private — it removes all rate limits on your account.</p>
+    </div>
+    <div class="card">
+      <h2>Quick start</h2>
+      <pre id="example"></pre>
+      <p class="hint">Pass the key in the <code>x-api-key</code> header. Full docs: <a href="/docs" style="color:var(--accent)">/docs</a></p>
+    </div>
+  </div>
+
+  <!-- error state -->
+  <div id="error" class="card hidden">
+    <h2>Hang tight</h2>
+    <p class="status" style="margin-bottom:12px">We're still finalizing your subscription.</p>
+    <p class="hint">If your key doesn't appear within a few minutes, email <a href="mailto:china13375633555ld@outlook.com" style="color:var(--accent)">china13375633555ld@outlook.com</a> with this reference and we'll send it over right away:</p>
+    <pre id="subref" style="margin-top:8px"></pre>
+  </div>
+</main>
+<footer>⚒️ OG Forge — built by an AI agent, operated by humans. · <a href="/">Home</a></footer>
+</div>
+<script>
+(function(){
+  var qs = new URLSearchParams(location.search);
+  var sub = (qs.get('subscription_id') || '').trim();
+  var elLoad = document.getElementById('loading');
+  var elDone = document.getElementById('done');
+  var elErr  = document.getElementById('error');
+
+  function fail(){
+    elLoad.classList.add('hidden');
+    elErr.classList.remove('hidden');
+    document.getElementById('subref').textContent = sub || '(no subscription id found in this URL)';
+  }
+
+  function show(key, email){
+    elLoad.classList.add('hidden');
+    elDone.classList.remove('hidden');
+    document.getElementById('apikey').textContent = key;
+    document.getElementById('email').textContent = email || 'your inbox';
+    document.getElementById('example').textContent =
+      'curl "https://og-forge.xyz/v1/generate?title=Hello+Pro" \\\n  -H "x-api-key: ' + key + '" --output card.png';
+    var btn = document.getElementById('copy');
+    btn.onclick = function(){
+      navigator.clipboard.writeText(key).then(function(){
+        btn.textContent = 'Copied!';
+        setTimeout(function(){ btn.textContent = 'Copy'; }, 1500);
+      });
+    };
+  }
+
+  if(!sub){ fail(); return; }
+
+  var tries = 0, maxTries = 20; // ~60s of polling while the webhook lands
+  (function poll(){
+    fetch('/v1/pro/key?subscription_id=' + encodeURIComponent(sub))
+      .then(function(r){ if(r.ok){ return r.json(); } if(r.status === 404){ throw 'pending'; } throw 'error'; })
+      .then(function(d){ show(d.api_key, d.email); })
+      .catch(function(e){
+        if(e === 'pending' && tries++ < maxTries){ setTimeout(poll, 3000); }
+        else { fail(); }
+      });
+  })();
+})();
+</script>
+</body>
+</html>

@@ -42,6 +42,9 @@ _hits: dict[str, deque[float]] = defaultdict(deque)
 API_KEYS: dict[str, str] = {}  # {"ogf_live_xxx": "pro", ...}
 
 CREEM_WEBHOOK_SECRET = os.environ.get("CREEM_WEBHOOK_SECRET", "")
+# Optional: enables Creem success-redirect signature verification on
+# /v1/pro/key. Unset = subscription id alone authorizes (it is unguessable).
+CREEM_API_KEY = os.environ.get("CREEM_API_KEY", "")
 # Permanent Creem checkout link (the product page auto-creates a fresh
 # checkout session per buyer). Override or disable via the OGF_CHECKOUT_URL
 # env var: set a different URL, or an empty string to show the waitlist again.
@@ -131,6 +134,13 @@ async def privacy() -> FileResponse:
 @app.get("/terms", include_in_schema=False)
 async def terms() -> FileResponse:
     return FileResponse("static/terms.html", media_type="text/html")
+
+
+@app.get("/welcome", include_in_schema=False)
+async def welcome() -> FileResponse:
+    """Post-payment landing page: Creem's success redirect points here
+    (product default_success_url) and the buyer's API key is shown."""
+    return FileResponse("static/welcome.html", media_type="text/html")
 
 
 @app.get("/v1/templates")
@@ -391,6 +401,59 @@ async def creem_webhook(request: Request) -> dict:
 
     # Always 200 so Creem doesn't retry known/unhandled event types.
     return {"received": True, "type": event_type}
+
+
+@app.get("/v1/pro/key")
+async def pro_key(request: Request, subscription_id: str = Query("")) -> dict:
+    """Hand a paying customer their API key on the /welcome page.
+
+    Auth: the Creem subscription id from the payment success redirect —
+    an unguessable opaque id only the buyer (and Creem) knows. Creem can
+    also sign the redirect (`signature` param, HMAC with the API key);
+    verification is enabled when CREEM_API_KEY is set. The id alone is
+    sufficient: guessing a valid sub id is infeasible and it only ever
+    returns the buyer's own key.
+    """
+    subscription_id = subscription_id.strip()
+    if not subscription_id:
+        raise HTTPException(400, "subscription_id is required.")
+
+    allowed, retry = check_rate_limit("pk:" + anon_key(client_ip(request)), limit=20)
+    if not allowed:
+        raise HTTPException(
+            429, f"Too many requests. Retry in {retry}s.",
+            headers={"Retry-After": str(retry)},
+        )
+
+    if CREEM_API_KEY:
+        sig = request.query_params.get("signature", "")
+        # canonical string: params in URL order, empty values excluded,
+        # salt={api key} appended (per Creem checkout redirect docs)
+        pairs = [
+            f"{k}={v}"
+            for k, v in request.query_params.multi_items()
+            if k != "signature" and v
+        ]
+        expected = hashlib.sha256(
+            ("|".join(pairs) + f"|salt={CREEM_API_KEY}").encode()
+        ).hexdigest()
+        if not sig or not hmac.compare_digest(sig, expected):
+            print(f"[pro-key] invalid redirect signature for sub={subscription_id[:12]}…", flush=True)
+            raise HTTPException(401, "Invalid signature.")
+
+    conn = _keys_db()
+    try:
+        row = conn.execute(
+            "SELECT api_key, email FROM api_keys WHERE subscription_id = ? AND status = 'active'",
+            (subscription_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        # webhook may not have arrived yet — the welcome page polls
+        raise HTTPException(404, "No active key for this subscription yet.")
+    print(f"[pro-key] delivered key for sub={subscription_id[:12]}…", flush=True)
+    return {"api_key": row[0], "email": row[1]}
 
 
 @app.get("/v1/config")

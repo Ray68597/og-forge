@@ -99,5 +99,25 @@ print("=== 11. default checkout URL is the live Creem product link ===")
 assert DEFAULT_CHECKOUT_URL.startswith("https://creem.io/product/prod_"), DEFAULT_CHECKOUT_URL
 print("PASS:", DEFAULT_CHECKOUT_URL)
 
+print("=== 12. /welcome page served ===")
+r = c.get("/welcome")
+assert r.status_code == 200 and "API key" in r.text, (r.status_code, r.text[:200])
+print("PASS: welcome page ok")
+
+print("=== 13. pro key retrieval by subscription_id ===")
+r = c.get("/v1/pro/key", params={"subscription_id": "sub_test_002"})
+assert r.status_code == 200, (r.status_code, r.text)
+assert r.json()["api_key"].startswith("ogf_live_") and r.json()["email"] == "buyer2@example.com"
+print("PASS: key delivered for active sub")
+
+print("=== 14. revoked / unknown subscription -> 404, missing param -> 400 ===")
+r = c.get("/v1/pro/key", params={"subscription_id": "sub_test_001"})  # revoked in test 7
+assert r.status_code == 404, (r.status_code, r.text)
+r = c.get("/v1/pro/key", params={"subscription_id": "sub_does_not_exist"})
+assert r.status_code == 404
+r = c.get("/v1/pro/key")
+assert r.status_code == 400
+print("PASS: 404 revoked/unknown, 400 missing")
+
 print()
-print("ALL 11 TESTS PASSED")
+print("ALL 14 TESTS PASSED")
