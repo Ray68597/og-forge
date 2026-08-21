@@ -1,12 +1,12 @@
 name: uptime
 on:
   schedule:
-    - cron: '0 * * * *'  # 每小时整点（UTC）
+    - cron: '17 * * * *'  # 每小时第 17 分（避开整点 GitHub cron 拥挤高峰，实测整点可延迟 30min+）
   workflow_dispatch: {}
 
 permissions:
-  contents: read
-  issues: write
+  contents: write   # 月度心跳提交（heartbeat 分支，保 scheduled workflow 不被 60 天不活跃禁用）
+  issues: write     # 失败时自动开 Issue
 
 jobs:
   check:
@@ -47,3 +47,19 @@ jobs:
                 labels: ['uptime', 'automated']
               });
             }
+
+      - name: Checkout（仅为心跳步骤提供 git）
+        if: success() && github.event_name == 'schedule'
+        uses: actions/checkout@v4
+      - name: 月度心跳（每月 1 号提交到 heartbeat 分支；备份去重后保仓库活跃，防 60 天不活跃禁用 scheduled workflow）
+        if: success() && github.event_name == 'schedule'
+        run: |
+          [ "$(date -u +%d)" = "01" ] || { echo "not the 1st, skip heartbeat"; exit 0; }
+          git config user.name "uptime-heartbeat"
+          git config user.email "actions@github.com"
+          git checkout -B heartbeat
+          date -u > HEARTBEAT
+          git add HEARTBEAT
+          git commit -m "heartbeat: $(date -u +%F)" || { echo "nothing to commit"; exit 0; }
+          # heartbeat 分支非 master：webhook 过滤，不会触发 Render 部署
+          git push -f origin heartbeat
